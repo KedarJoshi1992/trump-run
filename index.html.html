@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRUMP RUN - Make Gaming Great Again!</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;900&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: radial-gradient(ellipse at center, #0d1b3e 0%, #060d1f 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; font-family: 'Fredoka One', cursive; overflow: hidden;
+  }
+  h1 { color:#FFD700; font-size:2.6rem; text-shadow: 3px 3px 0 #cc0000, 0 0 20px rgba(255,215,0,0.4); letter-spacing:3px; margin-bottom:2px; }
+  .subtitle { color:#ff6b6b; font-size:0.95rem; margin-bottom:10px; font-family:'Nunito',sans-serif; font-weight:900; letter-spacing:4px; text-transform:uppercase; }
+  #gameContainer { position:relative; border:3px solid #FFD700; box-shadow: 0 0 40px rgba(255,215,0,0.3), 0 0 80px rgba(255,0,0,0.1); border-radius:10px; overflow:hidden; }
+  canvas { display:block; }
+  #ui { display:flex; justify-content:space-between; width:820px; margin-top:8px; color:#FFD700; font-size:1.05rem; padding:0 5px; }
+  #instructions { color:rgba(255,255,255,0.45); font-family:'Nunito',sans-serif; font-size:0.82rem; margin-top:6px; text-align:center; letter-spacing:1px; }
+  #overlay {
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    background:rgba(0,0,0,0.82); display:flex; flex-direction:column;
+    align-items:center; justify-content:center; color:#FFD700; font-family:'Fredoka One',cursive;
+  }
+  #overlay h2 { font-size:3rem; text-shadow: 3px 3px 0 #cc0000, 0 0 30px rgba(255,215,0,0.5); margin-bottom:8px; }
+  .hint { font-size:1rem; color:rgba(255,255,255,0.7); font-family:'Nunito',sans-serif; margin-bottom:6px; }
+  .hint span { color:#FFD700; }
+  .btn {
+    background:linear-gradient(135deg,#FFD700,#ff8c00); color:#0d1b3e;
+    border:none; padding:14px 44px; font-size:1.4rem; font-family:'Fredoka One',cursive;
+    border-radius:50px; cursor:pointer; box-shadow:0 4px 20px rgba(255,215,0,0.5);
+    transition:transform 0.1s, box-shadow 0.1s; letter-spacing:1px; margin-top:12px;
+  }
+  .btn:hover { transform:scale(1.06); box-shadow:0 6px 30px rgba(255,215,0,0.7); }
+  .btn:active { transform:scale(0.97); }
+</style>
+</head>
+<body>
+<h1>🇺🇸 TRUMP RUN 🇺🇸</h1>
+<div class="subtitle">Make Gaming Great Again</div>
+<div id="gameContainer">
+  <canvas id="gameCanvas" width="820" height="390"></canvas>
+  <div id="overlay">
+    <h2>TRUMP RUN</h2>
+    <p class="hint">Jump over <span>Walls &amp; Pipes</span> • Dodge <span>Flying Elon 🚀</span> • Collect <span>💰 Coins</span></p>
+    <button class="btn" onclick="startGame()">▶ START GAME</button>
+  </div>
+</div>
+<div id="ui">
+  <span>🏆 SCORE: <span id="scoreDisplay">0</span></span>
+  <span>⭐ BEST: <span id="highDisplay">0</span></span>
+  <span id="livesDisplay">❤️❤️❤️</span>
+</div>
+<div id="instructions">SPACE / CLICK / TAP to Jump &nbsp;•&nbsp; Double Jump Supported!</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const W = canvas.width, H = canvas.height;
+const GROUND_Y = H - 72;
+
+let gameRunning=false, score=0, highScore=0, lives=3;
+let frame=0, speed=4.2, spawnTimer=0, spawnInterval=95, gameOver=false;
+
+const trump = {
+  x:90, y:0, w:56, h:80,
+  vy:0, onGround:true, jumps:0, maxJumps:2,
+  invincible:0, walkFrame:0
+};
+trump.y = GROUND_Y - trump.h;
+
+let obstacles=[], coins=[], particles=[], clouds=[], bgX=0;
+
+for(let i=0;i<6;i++)
+  clouds.push({x:Math.random()*W, y:20+Math.random()*70, w:50+Math.random()*90, spd:0.25+Math.random()*0.35});
+
+function jump(){
+  if(!gameRunning||gameOver) return;
+  if(trump.jumps < trump.maxJumps){
+    trump.vy=-15.5; trump.jumps++;
+    burst(trump.x+trump.w/2, trump.y+trump.h, '#FFD700', 7);
+  }
+}
+document.addEventListener('keydown', e=>{ if(e.code==='Space'){e.preventDefault();jump();} });
+canvas.addEventListener('click', jump);
+document.addEventListener('touchstart', e=>{ e.preventDefault(); jump(); },{passive:false});
+
+function burst(x,y,col,n){
+  for(let i=0;i<n;i++)
+    particles.push({x,y,vx:(Math.random()-0.5)*7,vy:-Math.random()*6-1,life:45,col,sz:3+Math.random()*4});
+}
+
+function spawnObstacle(){
+  const r=Math.random();
+  if(r<0.3){
+    const ey=GROUND_Y-95-Math.random()*70;
+    obstacles.push({type:'elon',x:W+30,y:ey,w:58,h:68,t:0});
+  } else if(r<0.65){
+    obstacles.push({type:'pipe',x:W+20,y:GROUND_Y-85,w:42,h:85});
+  } else {
+    const wh=38+Math.random()*48;
+    obstacles.push({type:'wall',x:W+20,y:GROUND_Y-wh,w:32,h:wh});
+  }
+}
+function spawnCoin(){
+  coins.push({x:W+20,y:GROUND_Y-55-Math.random()*90,r:13,got:false});
+}
+function updateUI(){
+  document.getElementById('scoreDisplay').textContent=score;
+  document.getElementById('highDisplay').textContent=highScore;
+  const h=['','❤️','❤️❤️','❤️❤️❤️'];
+  document.getElementById('livesDisplay').textContent=h[Math.max(0,lives)]||'💀';
+}
+
+// ── BACKGROUND ──────────────────────────────────────
+function drawBG(){
+  const sky=ctx.createLinearGradient(0,0,0,GROUND_Y);
+  sky.addColorStop(0,'#0b1f6e'); sky.addColorStop(1,'#3a7bd5');
+  ctx.fillStyle=sky; ctx.fillRect(0,0,W,GROUND_Y);
+
+  // Stars
+  ctx.fillStyle='rgba(255,255,255,0.6)';
+  for(let i=0;i<25;i++){
+    ctx.fillRect(((i*179+bgX*0.04)%W),(i*67)%(GROUND_Y*0.55),i%3===0?2:1.5,i%3===0?2:1.5);
+  }
+  // Clouds
+  clouds.forEach(c=>{
+    const cg=ctx.createRadialGradient(c.x,c.y,2,c.x,c.y,c.w*0.6);
+    cg.addColorStop(0,'rgba(255,255,255,0.95)'); cg.addColorStop(1,'rgba(200,220,255,0)');
+    ctx.fillStyle=cg;
+    ctx.beginPath();
+    ctx.ellipse(c.x,c.y,c.w/2,22,0,0,Math.PI*2);
+    ctx.ellipse(c.x-c.w*0.22,c.y+6,c.w*0.3,16,0,0,Math.PI*2);
+    ctx.ellipse(c.x+c.w*0.22,c.y+6,c.w*0.32,17,0,0,Math.PI*2);
+    ctx.fill();
+  });
+
+  const gg=ctx.createLinearGradient(0,GROUND_Y,0,H);
+  gg.addColorStop(0,'#2d7a2d'); gg.addColorStop(0.12,'#1e5a1e');
+  gg.addColorStop(0.12,'#8a6520'); gg.addColorStop(1,'#5c3d0e');
+  ctx.fillStyle=gg; ctx.fillRect(0,GROUND_Y,W,H-GROUND_Y);
+  ctx.fillStyle='#3dd63d'; ctx.fillRect(0,GROUND_Y,W,4);
+
+  ctx.fillStyle='rgba(0,0,0,0.08)';
+  for(let i=0;i<15;i++){
+    ctx.fillRect(((i*58)-bgX%58),GROUND_Y+6,56,22);
+  }
+  ctx.fillStyle='#4fe04f';
+  for(let i=0;i<20;i++){
+    const gx=((i*43)-bgX%43+5)%W;
+    ctx.fillRect(gx,GROUND_Y-1,3,6); ctx.fillRect(gx+5,GROUND_Y-2,2,5);
+  }
+}
+
+// ── TRUMP (detailed realistic) ───────────────────────
+function drawTrump(x,y,invincible){
+  const blink=invincible>0&&Math.floor(invincible/4)%2===0;
+  if(blink) return;
+  const w=trump.w, h=trump.h;
+  const isAir=!trump.onGround;
+  const wf=trump.walkFrame;
+  const legSwing=isAir?0.3:Math.sin(wf*0.22)*0.38;
+
+  ctx.save();
+
+  // Ground shadow
+  ctx.fillStyle='rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(x+w/2,GROUND_Y+3,w*0.4,7,0,0,Math.PI*2); ctx.fill();
+
+  // ── SHOES ──
+  ctx.save(); ctx.translate(x+w*0.3,y+h);
+  ctx.rotate(isAir?0.2:-legSwing);
+  const sg=ctx.createRadialGradient(0,0,1,2,0,10);
+  sg.addColorStop(0,'#333'); sg.addColorStop(1,'#000');
+  ctx.fillStyle=sg;
+  ctx.beginPath(); ctx.ellipse(0,0,10,6,0,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#555'; ctx.lineWidth=0.5; ctx.stroke();
+  ctx.restore();
+
+  ctx.save(); ctx.translate(x+w*0.7,y+h);
+  ctx.rotate(isAir?-0.2:legSwing);
+  ctx.fillStyle=sg;
+  ctx.beginPath(); ctx.ellipse(0,0,10,6,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // ── TROUSERS ──
+  const tg=ctx.createLinearGradient(x,y+h*0.55,x+w,y+h);
+  tg.addColorStop(0,'#1f2570'); tg.addColorStop(1,'#0d1140');
+  ctx.fillStyle=tg;
+  ctx.save(); ctx.translate(x+w*0.3,y+h*0.68); ctx.rotate(isAir?0.2:-legSwing);
+  ctx.beginPath(); ctx.roundRect(-7,-22,14,30,4); ctx.fill(); ctx.restore();
+  ctx.save(); ctx.translate(x+w*0.7,y+h*0.68); ctx.rotate(isAir?-0.2:legSwing);
+  ctx.beginPath(); ctx.roundRect(-7,-22,14,30,4); ctx.fill(); ctx.restore();
+  // Trouser crease
+  ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=1;
+  ctx.save(); ctx.translate(x+w*0.3,y+h*0.68); ctx.rotate(isAir?0.2:-legSwing);
+  ctx.beginPath(); ctx.moveTo(0,-20); ctx.lineTo(0,6); ctx.stroke(); ctx.restore();
+  ctx.save(); ctx.translate(x+w*0.7,y+h*0.68); ctx.rotate(isAir?-0.2:legSwing);
+  ctx.beginPath(); ctx.moveTo(0,-20); ctx.lineTo(0,6); ctx.stroke(); ctx.restore();
+
+  // ── JACKET (navy blue) ──
+  const jg=ctx.createLinearGradient(x+4,y+h*0.28,x+w-4,y+h*0.82);
+  jg.addColorStop(0,'#1e278a'); jg.addColorStop(0.5,'#161e70'); jg.addColorStop(1,'#0d1248');
+  ctx.fillStyle=jg;
+  ctx.beginPath(); ctx.roundRect(x+5,y+h*0.28,w-10,h*0.57,7); ctx.fill();
+
+  // Jacket seam lines
+  ctx.strokeStyle='rgba(0,0,80,0.4)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(x+w/2,y+h*0.28); ctx.lineTo(x+w/2,y+h*0.85); ctx.stroke();
+
+  // White shirt
+  ctx.fillStyle='#f8f8f8';
+  ctx.beginPath(); ctx.roundRect(x+w/2-9,y+h*0.28,18,h*0.4,3); ctx.fill();
+  // Button row
+  ctx.fillStyle='#ccc';
+  for(let i=0;i<4;i++){
+    ctx.beginPath(); ctx.arc(x+w/2,y+h*0.34+i*10,1.8,0,Math.PI*2); ctx.fill();
+  }
+
+  // Left lapel
+  ctx.fillStyle='#1c2588';
+  ctx.beginPath();
+  ctx.moveTo(x+5,y+h*0.28); ctx.lineTo(x+w/2-9,y+h*0.42); ctx.lineTo(x+w/2-5,y+h*0.28); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x+w-5,y+h*0.28); ctx.lineTo(x+w/2+9,y+h*0.42); ctx.lineTo(x+w/2+5,y+h*0.28); ctx.closePath(); ctx.fill();
+
+  // Lapel shine
+  ctx.strokeStyle='rgba(100,120,255,0.2)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(x+7,y+h*0.3); ctx.lineTo(x+w/2-7,y+h*0.42); ctx.stroke();
+
+  // Pocket square
+  ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.roundRect(x+9,y+h*0.42,11,9,2); ctx.fill();
+  ctx.strokeStyle='rgba(200,200,200,0.5)'; ctx.lineWidth=0.5;
+  ctx.strokeRect(x+9,y+h*0.42,11,9);
+
+  // ── TIE (signature long red) ──
+  const tierGrad=ctx.createLinearGradient(x+w/2-5,y+h*0.28,x+w/2+5,y+h*0.78);
+  tierGrad.addColorStop(0,'#ee0000'); tierGrad.addColorStop(0.5,'#cc0000'); tierGrad.addColorStop(1,'#880000');
+  ctx.fillStyle=tierGrad;
+  ctx.beginPath();
+  ctx.moveTo(x+w/2-6,y+h*0.29); ctx.lineTo(x+w/2+6,y+h*0.29);
+  ctx.lineTo(x+w/2+9,y+h*0.65); ctx.lineTo(x+w/2,y+h*0.76);
+  ctx.lineTo(x+w/2-9,y+h*0.65); ctx.closePath(); ctx.fill();
+  // Tie knot
+  ctx.fillStyle='#dd0000';
+  ctx.beginPath(); ctx.roundRect(x+w/2-5,y+h*0.28,10,9,3); ctx.fill();
+  // Tie shine
+  ctx.fillStyle='rgba(255,80,80,0.25)';
+  ctx.beginPath(); ctx.roundRect(x+w/2-2,y+h*0.31,3.5,22,2); ctx.fill();
+
+  // ── ARMS ──
+  const armAngle=isAir?-0.65:0.18;
+  const armWave=isAir?0:Math.sin(wf*0.22)*0.12;
+  const armG2=ctx.createLinearGradient(-5,0,5,24);
+  armG2.addColorStop(0,'#1e278a'); armG2.addColorStop(1,'#0d1248');
+
+  ctx.save(); ctx.translate(x+5,y+h*0.34); ctx.rotate(armAngle+armWave+0.42);
+  ctx.fillStyle=armG2; ctx.beginPath(); ctx.roundRect(-5,0,11,28,5); ctx.fill();
+  ctx.fillStyle='#f0f0f0'; ctx.fillRect(-5,24,11,5);
+  drawHand(ctx,0,32,6.5,'#f2b890'); ctx.restore();
+
+  ctx.save(); ctx.translate(x+w-5,y+h*0.34); ctx.rotate(-armAngle-armWave-0.42);
+  ctx.fillStyle=armG2; ctx.beginPath(); ctx.roundRect(-6,0,11,28,5); ctx.fill();
+  ctx.fillStyle='#f0f0f0'; ctx.fillRect(-6,24,11,5);
+  drawHand(ctx,0,32,6.5,'#f2b890'); ctx.restore();
+
+  // ── NECK ──
+  const nkG=ctx.createLinearGradient(x+w/2-6,y+h*0.18,x+w/2+6,y+h*0.3);
+  nkG.addColorStop(0,'#eeaa7c'); nkG.addColorStop(1,'#d49060');
+  ctx.fillStyle=nkG; ctx.beginPath(); ctx.roundRect(x+w/2-7,y+h*0.18,14,14,4); ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,0.1)'; ctx.beginPath(); ctx.roundRect(x+w/2-7,y+h*0.24,14,7,0); ctx.fill();
+
+  // ── HEAD ──
+  drawTrumpHead(x+w/2, y+h*0.11, 25, wf, isAir);
+
+  ctx.restore();
+}
+
+function drawHand(ctx,cx,cy,r,col){
+  ctx.fillStyle=col;
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+r*0.7,cy-r*0.3,2.5,4.5,-0.4,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.12)'; ctx.lineWidth=1;
+  for(let i=-1;i<=1;i++){
+    ctx.beginPath(); ctx.moveTo(cx+i*2.8,cy-r+2); ctx.lineTo(cx+i*2.8,cy-2); ctx.stroke();
+  }
+}
+
+function drawTrumpHead(cx, cy, r, wf, isAir){
+  // Head shape
+  const hG=ctx.createRadialGradient(cx-5,cy-6,2,cx,cy,r*1.6);
+  hG.addColorStop(0,'#f8c8a0'); hG.addColorStop(0.5,'#eeaa7c'); hG.addColorStop(1,'#d49060');
+  ctx.fillStyle=hG;
+  ctx.beginPath(); ctx.ellipse(cx,cy,r,r*1.12,0,0,Math.PI*2); ctx.fill();
+
+  // Jaw widening (characteristic)
+  ctx.fillStyle='#eaa870';
+  ctx.beginPath(); ctx.ellipse(cx,cy+r*0.7,r*0.8,r*0.45,0,0,Math.PI*2); ctx.fill();
+
+  // Face highlight
+  ctx.fillStyle='rgba(255,210,170,0.25)';
+  ctx.beginPath(); ctx.ellipse(cx-5,cy-5,r*0.55,r*0.5,0,0,Math.PI*2); ctx.fill();
+
+  // Ears
+  ctx.fillStyle='#eeaa7c';
+  ctx.beginPath(); ctx.ellipse(cx-r-2,cy+2,5.5,7.5,0.3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+r+2,cy+2,5.5,7.5,-0.3,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#d49060';
+  ctx.beginPath(); ctx.ellipse(cx-r-1,cy+3,2.5,4,0.3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+r+1,cy+3,2.5,4,-0.3,0,Math.PI*2); ctx.fill();
+
+  // ── ICONIC GOLDEN HAIR ──
+  const hCol=ctx.createRadialGradient(cx,cy-r-4,2,cx,cy-r,r*1.5);
+  hCol.addColorStop(0,'#ffe87a'); hCol.addColorStop(0.5,'#FFD700'); hCol.addColorStop(1,'#b89000');
+
+  // Main hair mass
+  ctx.fillStyle=hCol;
+  ctx.beginPath(); ctx.ellipse(cx,cy-r-2,r*1.18,r*0.78,-0.08,0,Math.PI); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx-3,cy-r,r*1.12,r*0.68,0.05,Math.PI,0); ctx.fill();
+
+  // Famous combover swoop
+  ctx.fillStyle='#FFD700';
+  ctx.beginPath();
+  ctx.moveTo(cx+r+5,cy-2);
+  ctx.quadraticCurveTo(cx+r+10,cy-r+2,cx+2,cy-r-12);
+  ctx.quadraticCurveTo(cx-r-7,cy-r-10,cx-r,cy-2);
+  ctx.closePath(); ctx.fill();
+
+  // Hair strands
+  ctx.strokeStyle='#b89000'; ctx.lineWidth=1.8; ctx.lineCap='round';
+  for(let i=-4;i<=4;i++){
+    ctx.beginPath();
+    ctx.moveTo(cx+i*6+4,cy-r+3);
+    ctx.quadraticCurveTo(cx+i*4-8,cy-r-16,cx+i*5-15,cy-r-5);
+    ctx.stroke();
+  }
+
+  // Right-side hair lump (very characteristic)
+  ctx.fillStyle='#FFD700';
+  ctx.beginPath(); ctx.ellipse(cx+r*0.88,cy-r*0.15,11,r*0.72,-0.28,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+r*0.92,cy-r*0.65,9,13,-0.18,0,Math.PI*2); ctx.fill();
+
+  // Hair shine
+  ctx.fillStyle='rgba(255,252,190,0.55)';
+  ctx.beginPath(); ctx.ellipse(cx-5,cy-r-7,r*0.52,r*0.3,-0.2,0,Math.PI*2); ctx.fill();
+
+  // ── EYEBROWS (thick blonde) ──
+  const brG=ctx.createLinearGradient(cx-r*0.78,0,cx-r*0.1,0);
+  brG.addColorStop(0,'#c8a000'); brG.addColorStop(1,'#a08000');
+  ctx.fillStyle=brG;
+  ctx.beginPath(); ctx.roundRect(cx-r*0.8,cy-r*0.38,r*0.7,5.5,3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(cx+r*0.1,cy-r*0.38,r*0.7,5.5,3); ctx.fill();
+  // Expression slant
+  ctx.fillStyle='rgba(80,50,0,0.25)';
+  ctx.beginPath(); ctx.roundRect(cx-r*0.8,cy-r*0.38,r*0.7,2,2); ctx.fill();
+
+  // ── EYES (blue) ──
+  ctx.fillStyle='rgba(230,200,160,0.3)';
+  ctx.beginPath(); ctx.ellipse(cx-r*0.4,cy-r*0.1,9,7,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+r*0.4,cy-r*0.1,9,7,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.ellipse(cx-r*0.4,cy-r*0.1,8,5.5,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+r*0.4,cy-r*0.1,8,5.5,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#3a6eaa';
+  ctx.beginPath(); ctx.arc(cx-r*0.4,cy-r*0.1,5,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+r*0.4,cy-r*0.1,5,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#111';
+  ctx.beginPath(); ctx.arc(cx-r*0.4,cy-r*0.1,2.8,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+r*0.4,cy-r*0.1,2.8,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.9)';
+  ctx.beginPath(); ctx.arc(cx-r*0.4-1.5,cy-r*0.14,1.4,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+r*0.4-1.5,cy-r*0.14,1.4,0,Math.PI*2); ctx.fill();
+  // Lower eyelid line
+  ctx.strokeStyle='rgba(180,130,90,0.4)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(cx-r*0.4,cy-r*0.1+3,7,0.2,Math.PI-0.2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx+r*0.4,cy-r*0.1+3,7,0.2,Math.PI-0.2); ctx.stroke();
+
+  // ── NOSE ──
+  ctx.fillStyle='#d89560';
+  ctx.beginPath(); ctx.ellipse(cx+2,cy+r*0.2,7,9,0.12,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,200,150,0.4)';
+  ctx.beginPath(); ctx.ellipse(cx,cy+r*0.1,3,4.5,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.ellipse(cx-2,cy+r*0.32,2.5,2,0.3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+6,cy+r*0.32,2.5,2,-0.3,0,Math.PI*2); ctx.fill();
+
+  // Nasolabial folds (characteristic)
+  ctx.strokeStyle='rgba(160,100,50,0.22)'; ctx.lineWidth=1.2; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(cx-5,cy+r*0.25); ctx.quadraticCurveTo(cx-8,cy+r*0.52,cx-7,cy+r*0.6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+9,cy+r*0.25); ctx.quadraticCurveTo(cx+12,cy+r*0.52,cx+11,cy+r*0.6); ctx.stroke();
+
+  // ── MOUTH (pouty/pursed) ──
+  ctx.fillStyle='#c05030';
+  ctx.beginPath();
+  ctx.moveTo(cx-r*0.48,cy+r*0.52);
+  ctx.quadraticCurveTo(cx-r*0.15,cy+r*0.4,cx,cy+r*0.46);
+  ctx.quadraticCurveTo(cx+r*0.15,cy+r*0.4,cx+r*0.48,cy+r*0.52);
+  ctx.quadraticCurveTo(cx,cy+r*0.58,cx-r*0.48,cy+r*0.52);
+  ctx.fill();
+  ctx.fillStyle='#d46050';
+  ctx.beginPath();
+  ctx.moveTo(cx-r*0.48,cy+r*0.52);
+  ctx.quadraticCurveTo(cx,cy+r*0.75,cx+r*0.48,cy+r*0.52);
+  ctx.quadraticCurveTo(cx,cy+r*0.65,cx-r*0.48,cy+r*0.52);
+  ctx.fill();
+  ctx.strokeStyle='#a03820'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cx-r*0.48,cy+r*0.52); ctx.lineTo(cx+r*0.48,cy+r*0.52); ctx.stroke();
+
+  // ── FACE SHADING ──
+  // Tan/orange undertone (Tanning)
+  ctx.fillStyle='rgba(210,100,40,0.09)';
+  ctx.beginPath(); ctx.ellipse(cx,cy,r,r*1.12,0,0,Math.PI*2); ctx.fill();
+  // Cheek blush
+  ctx.fillStyle='rgba(220,100,50,0.1)';
+  ctx.beginPath(); ctx.ellipse(cx-r*0.58,cy+r*0.12,9,7,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+r*0.58,cy+r*0.12,9,7,0,0,Math.PI*2); ctx.fill();
+  // Chin shadow
+  ctx.fillStyle='rgba(0,0,0,0.07)';
+  ctx.beginPath(); ctx.ellipse(cx,cy+r*0.85,r*0.85,r*0.28,0,0,Math.PI*2); ctx.fill();
+}
+
+// ── ELON MUSK (flying with jetpack) ─────────────────
+function drawElon(obs){
+  obs.t++;
+  const hov=Math.sin(obs.t*0.06)*5;
+  const ex=obs.x, ey=obs.y+hov, ew=obs.w, eh=obs.h;
+  const cx=ex+ew/2, cy=ey+eh/2;
+
+  ctx.save();
+  ctx.translate(cx,cy); ctx.rotate(-0.07+Math.sin(obs.t*0.03)*0.04); ctx.translate(-cx,-cy);
+
+  // Rocket exhaust glow
+  const exGlow=ctx.createRadialGradient(cx,ey+eh-5,0,cx,ey+eh+10,25);
+  exGlow.addColorStop(0,'rgba(255,150,0,0.5)'); exGlow.addColorStop(1,'rgba(255,80,0,0)');
+  ctx.fillStyle=exGlow; ctx.beginPath(); ctx.arc(cx,ey+eh+10,25,0,Math.PI*2); ctx.fill();
+
+  // ── JETPACK ──
+  const jpG=ctx.createLinearGradient(cx-10,ey+22,cx+10,ey+54);
+  jpG.addColorStop(0,'#aaaaaa'); jpG.addColorStop(0.5,'#777'); jpG.addColorStop(1,'#444');
+  ctx.fillStyle=jpG;
+  ctx.beginPath(); ctx.roundRect(cx-11,ey+22,22,30,5); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1;
+  ctx.strokeRect(cx-11,ey+22,22,30);
+  ctx.fillStyle='rgba(255,255,255,0.15)';
+  ctx.beginPath(); ctx.roundRect(cx-8,ey+25,5,24,3); ctx.fill();
+  // Branding
+  ctx.fillStyle='rgba(0,200,255,0.9)'; ctx.font='bold 6px Nunito,sans-serif'; ctx.textAlign='center';
+  ctx.fillText('SpaceX',cx,ey+42);
+  // Nozzles
+  ctx.fillStyle='#555';
+  ctx.beginPath(); ctx.roundRect(cx-10,ey+50,9,6,2); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(cx+1,ey+50,9,6,2); ctx.fill();
+  // Flames
+  drawFlame(ctx,cx-5.5,ey+56,obs.t);
+  drawFlame(ctx,cx+5.5,ey+56,obs.t+15);
+
+  // ── LEGS ──
+  ctx.fillStyle='#1a1a2a';
+  ctx.save(); ctx.translate(cx-8,ey+42); ctx.rotate(0.18);
+  ctx.beginPath(); ctx.roundRect(-5,-2,10,20,3); ctx.fill(); ctx.restore();
+  ctx.save(); ctx.translate(cx+8,ey+42); ctx.rotate(-0.18);
+  ctx.beginPath(); ctx.roundRect(-5,-2,10,20,3); ctx.fill(); ctx.restore();
+  // Space boots
+  ctx.fillStyle='#222';
+  ctx.beginPath(); ctx.ellipse(cx-8,ey+63,8,5.5,-0.1,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+8,ey+63,8,5.5,0.1,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(0,200,255,0.5)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.ellipse(cx-8,ey+63,8,5.5,-0.1,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(cx+8,ey+63,8,5.5,0.1,0,Math.PI*2); ctx.stroke();
+
+  // ── BODY ──
+  const bG=ctx.createLinearGradient(cx-13,ey+12,cx+13,ey+44);
+  bG.addColorStop(0,'#2a2a3a'); bG.addColorStop(1,'#0d0d18');
+  ctx.fillStyle=bG; ctx.beginPath(); ctx.roundRect(cx-14,ey+12,28,32,6); ctx.fill();
+  ctx.strokeStyle='rgba(0,150,255,0.3)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.roundRect(cx-14,ey+12,28,32,6); ctx.stroke();
+  // Chest panel
+  ctx.fillStyle='rgba(0,180,255,0.15)';
+  ctx.beginPath(); ctx.roundRect(cx-10,ey+18,20,14,4); ctx.fill();
+  ctx.strokeStyle='rgba(0,200,255,0.4)'; ctx.lineWidth=0.8;
+  ctx.strokeRect(cx-10,ey+18,20,14);
+  // Tesla T on chest
+  ctx.fillStyle='#cc3300';
+  ctx.beginPath(); ctx.arc(cx,ey+26,6,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.font='bold 8px Fredoka One,cursive'; ctx.textAlign='center';
+  ctx.fillText('T',cx,ey+29.5);
+
+  // ── ARMS ──
+  ctx.fillStyle='#222';
+  ctx.save(); ctx.translate(cx-14,ey+16); ctx.rotate(-0.55);
+  ctx.beginPath(); ctx.roundRect(-20,-4,20,9,4); ctx.fill(); ctx.restore();
+  ctx.save(); ctx.translate(cx+14,ey+16); ctx.rotate(0.55);
+  ctx.beginPath(); ctx.roundRect(0,-4,20,9,4); ctx.fill(); ctx.restore();
+  // Hands
+  ctx.fillStyle='#e8c090';
+  ctx.beginPath(); ctx.arc(cx-28,ey+8,6,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+28,ey+8,6,0,Math.PI*2); ctx.fill();
+
+  // ── NECK ──
+  ctx.fillStyle='#d0a870';
+  ctx.beginPath(); ctx.roundRect(cx-5,ey+5,10,10,3); ctx.fill();
+
+  // ── HEAD ──
+  drawElonHead(ctx,cx,ey-4,obs.t);
+
+  ctx.restore();
+}
+
+function drawFlame(ctx,x,y,t){
+  const fl=Math.sin(t*0.4)*3;
+  ctx.fillStyle='rgba(255,80,0,0.9)';
+  ctx.beginPath(); ctx.moveTo(x-5,y); ctx.quadraticCurveTo(x-3+fl,y+10,x,y+16+fl);
+  ctx.quadraticCurveTo(x+3-fl,y+10,x+5,y); ctx.fill();
+  ctx.fillStyle='rgba(255,200,0,0.95)';
+  ctx.beginPath(); ctx.moveTo(x-3,y); ctx.quadraticCurveTo(x-1+fl*0.5,y+7,x,y+11);
+  ctx.quadraticCurveTo(x+1-fl*0.5,y+7,x+3,y); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.7)';
+  ctx.beginPath(); ctx.ellipse(x,y+2.5,2,3.5,0,0,Math.PI*2); ctx.fill();
+}
+
+function drawElonHead(ctx,cx,cy,t){
+  // Head shape
+  const hG=ctx.createRadialGradient(cx-4,cy-8,2,cx,cy-4,18);
+  hG.addColorStop(0,'#f8d8a8'); hG.addColorStop(1,'#d4a870');
+  ctx.fillStyle=hG; ctx.beginPath(); ctx.ellipse(cx,cy-4,16,19,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,220,170,0.3)';
+  ctx.beginPath(); ctx.ellipse(cx-4,cy-8,8,7,0,0,Math.PI*2); ctx.fill();
+
+  // Ears
+  ctx.fillStyle='#d4a870';
+  ctx.beginPath(); ctx.ellipse(cx-17,cy-2,4.5,6.5,0.25,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+17,cy-2,4.5,6.5,-0.25,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#c09060';
+  ctx.beginPath(); ctx.ellipse(cx-17,cy-1,2,3.5,0.25,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+17,cy-1,2,3.5,-0.25,0,Math.PI*2); ctx.fill();
+
+  // ── HAIR (short dark, slight receding line) ──
+  ctx.fillStyle='#1e1e1e';
+  ctx.beginPath(); ctx.ellipse(cx,cy-19,14,10,0,0,Math.PI); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx-13,cy-12,5,9,0.4,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+11,cy-15,7,9,-0.2,0,Math.PI*2); ctx.fill();
+  // Slight widow's peak
+  ctx.beginPath(); ctx.moveTo(cx-5,cy-20); ctx.lineTo(cx,cy-15); ctx.lineTo(cx+5,cy-20); ctx.closePath(); ctx.fill();
+  // Gray highlights
+  ctx.fillStyle='rgba(120,120,120,0.35)';
+  ctx.beginPath(); ctx.ellipse(cx-2,cy-19,5,4,0.1,0,Math.PI*2); ctx.fill();
+
+  // ── BROWS ──
+  ctx.strokeStyle='#2a2a2a'; ctx.lineWidth=2.8; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(cx-14,cy-12); ctx.lineTo(cx-5,cy-11); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+5,cy-11); ctx.lineTo(cx+14,cy-12); ctx.stroke();
+
+  // ── EYES ──
+  ctx.fillStyle='rgba(180,150,110,0.3)';
+  ctx.beginPath(); ctx.ellipse(cx-7,cy-4,7,6,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+7,cy-4,7,6,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.ellipse(cx-7,cy-4,6,4.5,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+7,cy-4,6,4.5,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#5a3a18';
+  ctx.beginPath(); ctx.arc(cx-7,cy-4,3.5,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+7,cy-4,3.5,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#080808';
+  ctx.beginPath(); ctx.arc(cx-7,cy-4,2,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+7,cy-4,2,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.85)';
+  ctx.beginPath(); ctx.arc(cx-8.2,cy-5.4,1.3,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+5.8,cy-5.4,1.3,0,Math.PI*2); ctx.fill();
+
+  // ── NOSE (slightly wide/bulbous) ──
+  ctx.fillStyle='#c09060';
+  ctx.beginPath(); ctx.ellipse(cx+1,cy+2,5,6,0.1,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,200,140,0.35)';
+  ctx.beginPath(); ctx.ellipse(cx-1,cy,2.5,4,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,0.2)';
+  ctx.beginPath(); ctx.ellipse(cx-2,cy+5,2.5,1.8,0.25,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+4,cy+5,2.5,1.8,-0.25,0,Math.PI*2); ctx.fill();
+
+  // ── MOUTH (slight smirk) ──
+  ctx.strokeStyle='#7a3818'; ctx.lineWidth=1.8; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(cx-9,cy+9);
+  ctx.quadraticCurveTo(cx-3,cy+11,cx+2,cy+10);
+  ctx.quadraticCurveTo(cx+7,cy+9,cx+10,cy+11);
+  ctx.stroke();
+  // Upper lip line
+  ctx.strokeStyle='rgba(140,80,40,0.5)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cx-9,cy+9); ctx.quadraticCurveTo(cx,cy+7,cx+10,cy+11); ctx.stroke();
+
+  // 5 o'clock shadow
+  ctx.fillStyle='rgba(80,50,20,0.15)';
+  ctx.beginPath(); ctx.ellipse(cx,cy+12,r=10,r*0.45,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(60,40,15,0.12)';
+  for(let i=0;i<10;i++){
+    ctx.beginPath(); ctx.arc(cx-10+i*2.2,cy+(i%2?10:11.5),0.9,0,Math.PI*2); ctx.fill();
+  }
+
+  // "ELON 🚀" label
+  ctx.fillStyle='rgba(0,200,255,0.92)';
+  ctx.font='bold 9px Fredoka One,cursive'; ctx.textAlign='center';
+  ctx.fillText('ELON 🚀',cx,cy-28);
+
+  // Chin
+  ctx.fillStyle='rgba(0,0,0,0.06)';
+  ctx.beginPath(); ctx.ellipse(cx,cy+15,r*0.8,r*0.22,0,0,Math.PI*2); ctx.fill();
+}
+
+// ── OBSTACLES ────────────────────────────────────────
+function drawObstacle(obs){
+  if(obs.type==='elon'){ drawElon(obs); return; }
+  if(obs.type==='wall'){
+    const bg=ctx.createLinearGradient(obs.x,obs.y,obs.x+obs.w,obs.y+obs.h);
+    bg.addColorStop(0,'#e74c3c'); bg.addColorStop(1,'#a93226');
+    ctx.fillStyle=bg; ctx.fillRect(obs.x,obs.y,obs.w,obs.h);
+    ctx.strokeStyle='#7b241c'; ctx.lineWidth=1;
+    for(let r2=0;r2<=obs.h;r2+=13){
+      ctx.beginPath(); ctx.moveTo(obs.x,obs.y+r2); ctx.lineTo(obs.x+obs.w,obs.y+r2); ctx.stroke();
+    }
+    const off=[0,7];
+    for(let r2=0;r2<obs.h;r2+=13){
+      const o=off[Math.floor(r2/13)%2];
+      for(let c=o;c<=obs.w;c+=14){
+        ctx.beginPath(); ctx.moveTo(obs.x+c,obs.y+r2); ctx.lineTo(obs.x+c,obs.y+r2+13); ctx.stroke();
+      }
+    }
+    ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.font='bold 10px Nunito,sans-serif'; ctx.textAlign='center';
+    ctx.fillText('WALL',obs.x+obs.w/2,obs.y+obs.h/2+4);
+  } else if(obs.type==='pipe'){
+    const pg=ctx.createLinearGradient(obs.x,0,obs.x+obs.w,0);
+    pg.addColorStop(0,'#1a7a1a'); pg.addColorStop(0.4,'#2ecc40'); pg.addColorStop(0.7,'#1a7a1a'); pg.addColorStop(1,'#0f5c0f');
+    ctx.fillStyle=pg; ctx.beginPath(); ctx.roundRect(obs.x+2,obs.y+20,obs.w-4,obs.h-20,3); ctx.fill();
+    const cpG=ctx.createLinearGradient(obs.x,0,obs.x+obs.w,0);
+    cpG.addColorStop(0,'#1a7a1a'); cpG.addColorStop(0.4,'#3de050'); cpG.addColorStop(1,'#1a7a1a');
+    ctx.fillStyle=cpG; ctx.beginPath(); ctx.roundRect(obs.x,obs.y,obs.w,22,5); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.13)';
+    ctx.beginPath(); ctx.roundRect(obs.x+5,obs.y+24,6,obs.h-30,3); ctx.fill();
+  }
+}
+
+// ── COIN ─────────────────────────────────────────────
+function drawCoin(coin){
+  if(coin.got) return;
+  const pulse=Math.sin(frame*0.12)*2;
+  ctx.save(); ctx.translate(coin.x,coin.y);
+  const glow=ctx.createRadialGradient(0,0,0,0,0,coin.r+10+pulse);
+  glow.addColorStop(0,'rgba(255,215,0,0.35)'); glow.addColorStop(1,'transparent');
+  ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(0,0,coin.r+10,0,Math.PI*2); ctx.fill();
+  const cg=ctx.createRadialGradient(-3,-3,1,0,0,coin.r);
+  cg.addColorStop(0,'#fffde0'); cg.addColorStop(0.4,'#FFD700'); cg.addColorStop(1,'#c8960a');
+  ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(0,0,coin.r,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#a07800'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.fillStyle='#7a5800'; ctx.font='bold 12px Fredoka One,cursive'; ctx.textAlign='center'; ctx.fillText('$',0,4);
+  ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.ellipse(-3,-4,4,2.5,-0.4,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+// ── PARTICLES ────────────────────────────────────────
+function drawParticles(){
+  particles.forEach(p=>{
+    ctx.globalAlpha=p.life/45;
+    ctx.fillStyle=p.col;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.sz*(p.life/45),0,Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha=1;
+}
+function drawHUD(){
+  ctx.fillStyle='rgba(0,0,0,0.4)';
+  ctx.beginPath(); ctx.roundRect(8,8,165,36,9); ctx.fill();
+  ctx.fillStyle='#FFD700'; ctx.font='21px Fredoka One,cursive'; ctx.textAlign='left';
+  ctx.shadowColor='rgba(0,0,0,0.6)'; ctx.shadowBlur=4;
+  ctx.fillText('🏆 '+score,18,32); ctx.shadowBlur=0;
+}
+function checkCol(a,b){
+  const m=8;
+  return !(a.x+m>b.x+b.w||a.x+a.w-m<b.x||a.y+m>b.y+b.h||a.y+a.h-m<b.y);
+}
+
+// ── GAME LOOP ─────────────────────────────────────────
+function startGame(){
+  overlay.style.display='none';
+  gameRunning=true; gameOver=false;
+  score=0; lives=3; speed=4.2; frame=0;
+  spawnTimer=0; spawnInterval=95;
+  obstacles=[]; coins=[]; particles=[];
+  trump.y=GROUND_Y-trump.h; trump.vy=0; trump.onGround=true;
+  trump.jumps=0; trump.invincible=0; trump.walkFrame=0;
+  updateUI(); requestAnimationFrame(loop);
+}
+function loop(){
+  if(!gameRunning) return;
+  frame++; bgX+=speed*0.55;
+  clouds.forEach(c=>{ c.x-=c.spd; if(c.x+c.w<0) c.x=W+c.w; });
+  trump.vy+=0.72; trump.y+=trump.vy;
+  if(trump.y>=GROUND_Y-trump.h){ trump.y=GROUND_Y-trump.h; trump.vy=0; trump.onGround=true; trump.jumps=0; }
+  else trump.onGround=false;
+  if(trump.onGround) trump.walkFrame++;
+  if(trump.invincible>0) trump.invincible--;
+
+  spawnTimer++;
+  if(spawnTimer>=spawnInterval){
+    spawnTimer=0; spawnObstacle();
+    if(Math.random()<0.55) spawnCoin();
+    spawnInterval=Math.max(48,spawnInterval-0.8);
+  }
+  obstacles.forEach(o=>o.x-=speed);
+  obstacles=obstacles.filter(o=>o.x+o.w>-100);
+  coins.forEach(c=>c.x-=speed);
+  coins=coins.filter(c=>c.x>-30&&!c.got);
+  particles.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.vy+=0.22; p.life--; });
+  particles=particles.filter(p=>p.life>0);
+
+  if(trump.invincible===0){
+    for(const obs of obstacles){
+      if(checkCol({x:trump.x,y:trump.y,w:trump.w,h:trump.h},{x:obs.x,y:obs.y,w:obs.w,h:obs.h})){
+        lives--; trump.invincible=90;
+        burst(trump.x+trump.w/2,trump.y+trump.h/2,'#ff4444',14);
+        updateUI(); if(lives<=0){ endGame(); return; } break;
+      }
+    }
+  }
+  coins.forEach(c=>{
+    if(!c.got){
+      const d=Math.hypot(trump.x+trump.w/2-c.x,trump.y+trump.h/2-c.y);
+      if(d<trump.w/2+c.r-5){ c.got=true; score+=10; burst(c.x,c.y,'#FFD700',10); updateUI(); }
+    }
+  });
+  if(frame%5===0){ score++; updateUI(); }
+  if(frame%500===0) speed=Math.min(11,speed+0.35);
+
+  drawBG();
+  coins.forEach(drawCoin);
+  obstacles.forEach(drawObstacle);
+  drawTrump(trump.x,trump.y,trump.invincible);
+  drawParticles();
+  drawHUD();
+  if(gameRunning&&!gameOver) requestAnimationFrame(loop);
+}
+function endGame(){
+  gameOver=true; gameRunning=false;
+  if(score>highScore) highScore=score;
+  updateUI();
+  overlay.innerHTML=`
+    <h2 style="font-size:2.8rem;text-shadow:3px 3px 0 #cc0000;">GAME OVER!</h2>
+    <p style="font-size:1.5rem;color:#FFD700;margin-bottom:4px;">Score: ${score}</p>
+    <p style="color:#aaa;font-family:Nunito,sans-serif;margin-bottom:4px;">Best: ${highScore}</p>
+    <button class="btn" onclick="startGame()">▶ PLAY AGAIN</button>
+  `;
+  overlay.style.display='flex'; overlay.style.flexDirection='column';
+  overlay.style.alignItems='center'; overlay.style.justifyContent='center';
+}
+let r;
+</script>
+</body>
+</html>
